@@ -583,8 +583,8 @@ tbody tr:last-child td { border-bottom: none; }
 .btn-onedrive:disabled { opacity:.5; cursor:not-allowed; }
 </style>
 
-<!-- MSAL.js — autenticação Microsoft para upload OneDrive -->
-<script src="https://alcdn.msauth.net/browser/3.14.0/js/msal-browser.min.js"></script>
+<!-- MSAL.js v2 — autenticação Microsoft para upload OneDrive -->
+<script src="https://unpkg.com/@azure/msal-browser@2.38.3/dist/msal-browser.min.js"></script>
 </head>
 <body>
 
@@ -11377,7 +11377,7 @@ async function exportarTudoCompacto() {
 const ONEDRIVE_CFG = {
   clientId:  'ff043eff-316a-431d-b2e7-b6eb31996bb7',    // Application (client) ID do Azure AD
   tenantId:  'c09a88e8-0f25-4f60-b58a-30b479a1e47f',    // Directory (tenant) ID do Azure AD
-  filePath:  'Documents/PowerBI/Projetos/Ibratin/Campanhas/TB_REGRAS_CAMPANHAS.csv',
+  filePath:  'PowerBI/Projetos/Ibratin/Campanhas/TB_REGRAS_CAMPANHAS.csv',
 };
 
 let _msalApp = null;
@@ -11392,7 +11392,7 @@ async function _getMsal() {
     },
     cache: { cacheLocation: 'sessionStorage' },
   });
-  await _msalApp.initialize();
+  // v2.x: initialize() não existe, construtor já inicializa
   return _msalApp;
 }
 
