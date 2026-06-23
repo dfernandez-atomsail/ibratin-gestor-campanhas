@@ -11218,7 +11218,7 @@ function _getDimValoresCompacto(dim, fltObj) {
     if (!tem1 && !tem2) return { valores: [''], aviso: null };
     const matched = aplicarFiltroAvancado(dados, adv);
     if (matched.length === 0) return { valores: [''], aviso: null };
-    const valores = matched.map(it => String(dim === 'produto' ? it.cd : (it.nome ?? '')));
+    const valores = matched.map(it => String(it.nome ?? ''));
     return { valores, aviso: null };
   }
 
@@ -11229,7 +11229,7 @@ function _getDimValoresCompacto(dim, fltObj) {
   for (const cd of sel) {
     const item = dados.find(it => String(it.cd) === String(cd));
     if (!item) { naoAchados.push(String(cd)); continue; }
-    valores.push(String(dim === 'produto' ? item.cd : (item.nome ?? '')));
+    valores.push(String(item.nome ?? ''));
   }
   const aviso = naoAchados.length
     ? `${dim.toUpperCase()}: cd(s) não encontrado(s): ${naoAchados.join(', ')}`
