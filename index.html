@@ -10852,9 +10852,15 @@ function atualizarPreview() { /* preview removido — resumo via renderCampanhas
 //  SALVAR / EDITAR / EXCLUIR
 // ════════════════════════════
 function proximoCod() {
-  let seq = parseInt(localStorage.getItem('ib_camp_seq') || '0') + 1;
+  const usados = new Set(campanhas.map(c => c.cod).filter(Boolean));
+  let seq = parseInt(localStorage.getItem('ib_camp_seq') || '0');
+  let cod;
+  do {
+    seq++;
+    cod = 'C' + String(seq).padStart(3, '0');
+  } while (usados.has(cod));
   localStorage.setItem('ib_camp_seq', String(seq));
-  return 'C' + String(seq).padStart(3, '0');
+  return cod;
 }
 
 function salvar() {
@@ -11668,11 +11674,4 @@ function _aplicarDims(data) {
   });
 
   const msg = `${DIM.canal.length} canais · ${DIM.segmento.length} segmentos · ${DIM.grupo.length} grupos · ${DIM.produto.length} produtos`;
-  toast('Dados atualizados — ' + msg, 'ok');
-}
-
-// ════════════════════════════
-init();
-</script>
-</body>
-</html>
+  toast('Dados atualizados — ' +
