@@ -11463,9 +11463,10 @@ async function publicarOneDrive() {
     }
 
     // 1. Publica CSV expandido (para Power BI)
+    // Content-Type: text/plain evita CORS preflight (OPTIONS) em ambientes cross-origin
     const resp = await fetch(N8N_WEBHOOK_URL, {
       method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'text/plain' },
       body:    JSON.stringify({
         conteudo: '﻿' + csv,
         arquivo:  'TB_REGRAS_CAMPANHAS.csv'
@@ -11481,7 +11482,7 @@ async function publicarOneDrive() {
     try {
       const respJson = await fetch(N8N_WEBHOOK_URL, {
         method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'text/plain' },
         body:    JSON.stringify({
           conteudo: JSON.stringify(campanhas, null, 2),
           arquivo:  'ib_campanhas.json'
