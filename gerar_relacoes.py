@@ -171,12 +171,12 @@ def processar_tuplas(raw_rows: list) -> list:
 
 
 def upload_onedrive(content: str, arquivo: str) -> int:
-    url  = N8N_WRITE_URL + "?arquivo=" + urllib.parse.quote(arquivo)
-    data = content.encode("utf-8")
+    data = json.dumps({"arquivo": arquivo, "conteudo": content, "formato": "plain"}).encode("utf-8")
     req  = urllib.request.Request(
-        url, data=data, headers={"Content-Type": "text/plain"}, method="POST"
+        N8N_WRITE_URL, data=data,
+        headers={"Content-Type": "application/json"}, method="POST"
     )
-    with urllib.request.urlopen(req, timeout=30) as resp:
+    with urllib.request.urlopen(req, timeout=60) as resp:
         return resp.status
 
 
