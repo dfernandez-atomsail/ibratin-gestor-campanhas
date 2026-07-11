@@ -10611,11 +10611,9 @@ function limparBasico(dim) {
   FLT[dim].sel.clear();
   document.querySelectorAll(`[data-dim="${dim}"]`).forEach(cb => cb.checked = false);
   const todosEl = document.getElementById(`todos-${dim}`);
-  if (todosEl) todosEl.checked = false;
+  if (todosEl) todosEl.checked = true;
   const searchInp = document.querySelector(`#panel-basico-${dim} .search-input`);
   if (searchInp) { searchInp.value = ''; filtrarBasico(dim, ''); }
-  const todosEl = document.getElementById(`todos-${dim}`);
-  if (todosEl) todosEl.checked = true;
   updateBadge(dim);
   atualizarPreview();
   recalcularDisponibilidade();
