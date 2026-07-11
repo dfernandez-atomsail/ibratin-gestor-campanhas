@@ -11671,14 +11671,18 @@ async function publicarOneDrive() {
     }
 
     // 1. Publica CSV expandido (para Power BI)
-    // Comprime com gzip + base64 para contornar limite de payload do N8N
     const csvRaw = '﻿' + csv;
     const csvComprimido = await _gzipBase64(csvRaw);
     console.log('[publicarOneDrive] CSV:', (csvRaw.length / 1024).toFixed(1), 'KB → comprimido:', (csvComprimido.length / 1024).toFixed(1), 'KB');
-    const resp = await fetch(N8N_WEBHOOK_URL + '?arquivo=TB_REGRAS_CAMPANHAS.csv', {
+
+    const resp = await fetch(N8N_WEBHOOK_URL, {
       method:  'POST',
-      headers: { 'Content-Type': 'text/plain' },
-      body:    csvComprimido,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        arquivo:  'TB_REGRAS_CAMPANHAS.csv',
+        conteudo: csvComprimido,
+        formato:  'gzip+base64',
+      }),
     });
 
     if (!resp.ok) {
@@ -11688,10 +11692,14 @@ async function publicarOneDrive() {
 
     // 2. Publica JSON de regras (backup para restaurar interface)
     try {
-      const respJson = await fetch(N8N_WEBHOOK_URL + '?arquivo=ib_campanhas.json', {
+      const respJson = await fetch(N8N_WEBHOOK_URL, {
         method:  'POST',
-        headers: { 'Content-Type': 'text/plain' },
-        body:    JSON.stringify(campanhas, null, 2),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          arquivo:  'ib_campanhas.json',
+          conteudo: JSON.stringify(campanhas, null, 2),
+          formato:  'json',
+        }),
       });
       if (!respJson.ok) console.warn('[publicarOneDrive] JSON backup falhou:', respJson.status);
     } catch (eJson) {
