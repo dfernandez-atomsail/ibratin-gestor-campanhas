@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -11632,26 +11632,6 @@ function _setBtnsOneDrive(label, disabled) {
   });
 }
 
-async function _gzipBase64(text) {
-  const bytes = new TextEncoder().encode(text);
-  const stream = new CompressionStream('gzip');
-  const writer = stream.writable.getWriter();
-  writer.write(bytes);
-  writer.close();
-  const reader = stream.readable.getReader();
-  const chunks = [];
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value);
-  }
-  const compressed = new Uint8Array(chunks.reduce((acc, c) => acc + c.length, 0));
-  let offset = 0;
-  for (const chunk of chunks) { compressed.set(chunk, offset); offset += chunk.length; }
-  let binary = '';
-  compressed.forEach(b => { binary += String.fromCharCode(b); });
-  return btoa(binary);
-}
 
 async function publicarOneDrive() {
   if (!N8N_WEBHOOK_URL) {
@@ -11671,15 +11651,13 @@ async function publicarOneDrive() {
     }
 
     // 1. Publica CSV expandido (para Power BI)
-    // Comprime com gzip + base64 para contornar limite de payload do N8N
     const csvRaw = '﻿' + csv;
-    const csvComprimido = await _gzipBase64(csvRaw);
-    console.log('[publicarOneDrive] CSV:', (csvRaw.length / 1024).toFixed(1), 'KB → comprimido:', (csvComprimido.length / 1024).toFixed(1), 'KB');
+    console.log('[publicarOneDrive] CSV:', (csvRaw.length / 1024).toFixed(1), 'KB');
 
     const resp = await fetch(N8N_WEBHOOK_URL, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ arquivo: 'TB_REGRAS_CAMPANHAS.csv', conteudo: csvComprimido, formato: 'gzip+base64' }),
+      body:    JSON.stringify({ arquivo: 'TB_REGRAS_CAMPANHAS.csv', conteudo: csvRaw, formato: 'plain' }),
     });
 
     if (!resp.ok) {
