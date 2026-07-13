@@ -11633,27 +11633,34 @@ function _setBtnsOneDrive(label, disabled) {
 }
 
 
-async function _gzipBase64(str) {
-  const data   = new TextEncoder().encode(str);
-  const cs     = new CompressionStream('gzip');
-  const writer = cs.writable.getWriter();
-  writer.write(data);
-  writer.close();
-  const chunks = [];
-  const reader = cs.readable.getReader();
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value);
+const _ENC = new TextEncoder();
+const _CHUNK_CHARS = 5 * 1024 * 1024; // 5 M chars ≈ 5 MB (CSV é predominantemente ASCII)
+
+async function _initUploadSession(arquivo) {
+  const resp = await fetch(N8N_WEBHOOK_URL, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ acao: 'init', arquivo }),
+  });
+  if (!resp.ok) {
+    const txt = await resp.text().catch(() => '');
+    throw new Error(`Sessão de upload falhou HTTP ${resp.status}${txt ? ': ' + txt.slice(0, 120) : ''}`);
   }
-  const total = chunks.reduce((s, c) => s + c.length, 0);
-  const out   = new Uint8Array(total);
-  let off = 0;
-  for (const c of chunks) { out.set(c, off); off += c.length; }
-  let bin = '';
-  for (let i = 0; i < out.length; i += 8192)
-    bin += String.fromCharCode(...out.subarray(i, i + 8192));
-  return btoa(bin);
+  const data = await resp.json();
+  if (!data.uploadUrl) throw new Error('N8N não retornou uploadUrl');
+  return data.uploadUrl;
+}
+
+async function _uploadChunk(uploadUrl, start, end, totalSize, conteudo) {
+  const resp = await fetch(N8N_WEBHOOK_URL, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ acao: 'chunk', uploadUrl, start, end, totalSize, conteudo }),
+  });
+  if (!resp.ok) {
+    const txt = await resp.text().catch(() => '');
+    throw new Error(`Bloco ${start}–${end} HTTP ${resp.status}${txt ? ': ' + txt.slice(0, 120) : ''}`);
+  }
 }
 
 async function publicarOneDrive() {
@@ -11673,33 +11680,38 @@ async function publicarOneDrive() {
       }
     }
 
-    // 1. Publica CSV expandido (para Power BI) — comprimido com gzip para suportar arquivos grandes
-    const csvRaw  = '﻿' + csv;
-    const csvGzip = await _gzipBase64(csvRaw);
-    console.log('[publicarOneDrive] CSV:', (csvRaw.length / 1024).toFixed(1), 'KB →',
-                'comprimido:', (csvGzip.length / 1024).toFixed(1), 'KB');
+    // 1. Publica CSV expandido (para Power BI) em blocos de 5 MB
+    const csvRaw    = '﻿' + csv;
+    const totalBytes = _ENC.encode(csvRaw).length;
+    const totalBlocos = Math.ceil(csvRaw.length / _CHUNK_CHARS);
+    console.log(`[publicarOneDrive] CSV: ${(csvRaw.length / 1024).toFixed(1)} KB | ${totalBlocos} bloco(s)`);
 
-    const resp = await fetch(N8N_WEBHOOK_URL, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ arquivo: 'TB_REGRAS_CAMPANHAS.csv', conteudo: csvGzip, formato: 'gzip+base64' }),
-    });
+    _setBtnsOneDrive('⏳ Iniciando sessão…', true);
+    const csvUploadUrl = await _initUploadSession('TB_REGRAS_CAMPANHAS.csv');
 
-    if (!resp.ok) {
-      const txt = await resp.text().catch(() => '');
-      throw new Error(`HTTP ${resp.status}${txt ? ': ' + txt.substring(0, 150) : ''}`);
+    let charStart = 0;
+    let byteStart = 0;
+    let blocoIdx  = 0;
+    while (charStart < csvRaw.length) {
+      const chunk    = csvRaw.slice(charStart, charStart + _CHUNK_CHARS);
+      const chunkLen = _ENC.encode(chunk).length;
+      const byteEnd  = byteStart + chunkLen - 1;
+      blocoIdx++;
+      _setBtnsOneDrive(`⏳ Bloco ${blocoIdx}/${totalBlocos}…`, true);
+      console.log(`[publicarOneDrive] bloco ${blocoIdx}/${totalBlocos}: bytes ${byteStart}–${byteEnd}/${totalBytes}`);
+      await _uploadChunk(csvUploadUrl, byteStart, byteEnd, totalBytes, chunk);
+      charStart += _CHUNK_CHARS;
+      byteStart += chunkLen;
     }
 
     // 2. Publica JSON de regras (backup para restaurar interface)
     try {
-      const respJson = await fetch(N8N_WEBHOOK_URL, {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ arquivo: 'ib_campanhas.json', conteudo: JSON.stringify(campanhas, null, 2), formato: 'json' }),
-      });
-      if (!respJson.ok) console.warn('[publicarOneDrive] JSON backup falhou:', respJson.status);
+      const jsonContent = JSON.stringify(campanhas, null, 2);
+      const jsonBytes   = _ENC.encode(jsonContent).length;
+      const jsonUrl     = await _initUploadSession('ib_campanhas.json');
+      await _uploadChunk(jsonUrl, 0, jsonBytes - 1, jsonBytes, jsonContent);
     } catch (eJson) {
-      console.warn('[publicarOneDrive] JSON backup erro:', eJson.message);
+      console.warn('[publicarOneDrive] JSON backup falhou:', eJson.message);
     }
 
     toast(`✓ ${linhas} linha(s) publicadas no OneDrive`, 'ok');
