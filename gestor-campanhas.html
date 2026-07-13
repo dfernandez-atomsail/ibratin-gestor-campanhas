@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -10410,13 +10410,18 @@ async function carregarRelacoes(forcar = false) {
       return;
     }
     const data = await resp.json();
-    if (data && Array.isArray(data.tuplas) && data.tuplas.length > 0) {
+    const ok = data && (
+      (Array.isArray(data.rows)   && data.rows.length   > 0) ||
+      (Array.isArray(data.tuplas) && data.tuplas.length > 0)
+    );
+    if (ok) {
       RELACOES = data;
-      console.log(`[RELACOES] ${RELACOES.tuplas.length} tuplas carregadas (${RELACOES._meta?.gerado || 'sem data'})`);
+      const total = RELACOES._meta?.total ?? (RELACOES.rows?.length ?? RELACOES.tuplas?.length ?? 0);
+      console.log(`[RELACOES] ${total} combinações carregadas (${RELACOES._meta?.gerado || 'sem data'}) formato=${RELACOES._meta?.formato || 'legado'}`);
       recalcularDisponibilidade();
       if (forcar) toast('Relações de dimensões atualizadas', 'ok');
     } else {
-      console.warn('[RELACOES] Resposta sem tuplas válidas — cross-filter desativado', data);
+      console.warn('[RELACOES] Resposta sem dados válidos — cross-filter desativado', data);
     }
   } catch (e) {
     clearTimeout(timer);
@@ -10426,9 +10431,15 @@ async function carregarRelacoes(forcar = false) {
 }
 
 function recalcularDisponibilidade() {
-  if (!RELACOES || !RELACOES.tuplas || !RELACOES.tuplas.length) return;
+  if (!RELACOES) return;
 
-  // Mapeia seleções atuais para nomes lowercase (as tuplas usam os valores originais)
+  // Formato compacto (compact-v1): keys[], vals{}, rows[[int,...]]
+  const isCompact = Array.isArray(RELACOES.keys) && RELACOES.vals && Array.isArray(RELACOES.rows);
+  // Formato legado: tuplas[{canal,...}]
+  const isTuplas  = Array.isArray(RELACOES.tuplas) && RELACOES.tuplas.length > 0;
+  if (!isCompact && !isTuplas) return;
+
+  // Mapa dim → nome lowercase das seleções atuais
   const selNomes = {};
   for (const dim of DIMS_CF) {
     if (!FLT[dim] || FLT[dim].sel.size === 0) { selNomes[dim] = null; continue; }
@@ -10445,21 +10456,56 @@ function recalcularDisponibilidade() {
     return;
   }
 
-  // Para cada dimensão-alvo: filtrar tuplas ignorando a própria dimensão → obtém valores válidos
-  for (const targetDim of DIMS_CF) {
-    const matching = RELACOES.tuplas.filter(t => {
-      for (const filterDim of DIMS_CF) {
-        if (filterDim === targetDim) continue;
-        if (!selNomes[filterDim]) continue;
-        const v = (t[filterDim] || '').toLowerCase();
-        if (!selNomes[filterDim].has(v)) return false;
+  if (isCompact) {
+    // ── Formato compacto: comparação por índice inteiro, muito mais rápido ──
+    const { keys, vals, rows } = RELACOES;
+    const dimCol = {};
+    keys.forEach((k, i) => { dimCol[k] = i; });
+
+    // Converte selNomes (strings lowercase) → sets de índices no vocabulário
+    const selIdx = {};
+    for (const dim of DIMS_CF) {
+      if (!selNomes[dim] || dimCol[dim] === undefined) { selIdx[dim] = null; continue; }
+      const dimVals = vals[dim] || [];
+      const idxSet  = new Set();
+      dimVals.forEach((v, i) => { if (selNomes[dim].has(v.toLowerCase())) idxSet.add(i); });
+      selIdx[dim] = idxSet.size ? idxSet : null;
+    }
+
+    for (const targetDim of DIMS_CF) {
+      if (dimCol[targetDim] === undefined) continue;
+      const targetCol  = dimCol[targetDim];
+      const targetVals = vals[targetDim] || [];
+      const validIdxs  = new Set();
+
+      for (const row of rows) {
+        let ok = true;
+        for (const fd of DIMS_CF) {
+          if (fd === targetDim || !selIdx[fd] || dimCol[fd] === undefined) continue;
+          if (!selIdx[fd].has(row[dimCol[fd]])) { ok = false; break; }
+        }
+        if (ok) validIdxs.add(row[targetCol]);
       }
-      return true;
-    });
-    const validNomes = new Set(
-      matching.map(t => (t[targetDim] || '').toLowerCase()).filter(Boolean)
-    );
-    _setDimDisponivel(targetDim, validNomes.size ? validNomes : null);
+
+      const validNomes = new Set(
+        [...validIdxs].map(i => targetVals[i]?.toLowerCase()).filter(Boolean)
+      );
+      _setDimDisponivel(targetDim, validNomes.size ? validNomes : null);
+    }
+
+  } else {
+    // ── Formato legado (tuplas[{...}]) ──
+    for (const targetDim of DIMS_CF) {
+      const matching = RELACOES.tuplas.filter(t => {
+        for (const fd of DIMS_CF) {
+          if (fd === targetDim || !selNomes[fd]) continue;
+          if (!selNomes[fd].has((t[fd] || '').toLowerCase())) return false;
+        }
+        return true;
+      });
+      const validNomes = new Set(matching.map(t => (t[targetDim] || '').toLowerCase()).filter(Boolean));
+      _setDimDisponivel(targetDim, validNomes.size ? validNomes : null);
+    }
   }
 }
 
@@ -11642,11 +11688,21 @@ function _setBtnsOneDrive(label, disabled) {
 const _ENC = new TextEncoder();
 const _CHUNK_CHARS = 5 * 1024 * 1024; // 5 M chars ≈ 5 MB (CSV é predominantemente ASCII)
 
+function _uploadSessionKey(arquivo) {
+  return 'ib_upload_session_' + arquivo.replace(/[^a-z0-9]/gi, '_');
+}
+
 async function _initUploadSession(arquivo) {
+  const lsKey          = _uploadSessionKey(arquivo);
+  const cancelUploadUrl = localStorage.getItem(lsKey) || undefined;
+
+  const body = { acao: 'init', arquivo };
+  if (cancelUploadUrl) body.cancelUploadUrl = cancelUploadUrl;
+
   const resp = await fetch(N8N_WEBHOOK_URL, {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ acao: 'init', arquivo }),
+    body:    JSON.stringify(body),
   });
   if (!resp.ok) {
     const txt = await resp.text().catch(() => '');
@@ -11654,6 +11710,8 @@ async function _initUploadSession(arquivo) {
   }
   const data = await resp.json();
   if (!data.uploadUrl) throw new Error('N8N não retornou uploadUrl');
+
+  localStorage.setItem(lsKey, data.uploadUrl);
   return data.uploadUrl;
 }
 
@@ -11720,6 +11778,8 @@ async function publicarOneDrive() {
       console.warn('[publicarOneDrive] JSON backup falhou:', eJson.message);
     }
 
+    localStorage.removeItem(_uploadSessionKey('TB_REGRAS_CAMPANHAS.csv'));
+    localStorage.removeItem(_uploadSessionKey('ib_campanhas.json'));
     toast(`✓ ${linhas} linha(s) publicadas no OneDrive`, 'ok');
     if (avisos.length) toast(`⚠ ${avisos.length} aviso(s) na exportação`, 'warn');
 
