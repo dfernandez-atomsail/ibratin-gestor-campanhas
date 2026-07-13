@@ -10400,22 +10400,28 @@ async function carregarRelacoes(forcar = false) {
   if (RELACOES && !forcar) return;
   if (!N8N_WEBHOOK_READ_URL) return;
   const ctrl  = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 8000);
+  const timer = setTimeout(() => ctrl.abort(), 60000);
   try {
+    console.log('[RELACOES] Carregando dim_relacoes.json…');
     const resp = await fetch(N8N_WEBHOOK_READ_URL + '?arquivo=dim_relacoes.json', { signal: ctrl.signal });
     clearTimeout(timer);
-    if (!resp.ok) return;
+    if (!resp.ok) {
+      console.warn(`[RELACOES] HTTP ${resp.status} — cross-filter desativado`);
+      return;
+    }
     const data = await resp.json();
     if (data && Array.isArray(data.tuplas) && data.tuplas.length > 0) {
       RELACOES = data;
       console.log(`[RELACOES] ${RELACOES.tuplas.length} tuplas carregadas (${RELACOES._meta?.gerado || 'sem data'})`);
       recalcularDisponibilidade();
       if (forcar) toast('Relações de dimensões atualizadas', 'ok');
+    } else {
+      console.warn('[RELACOES] Resposta sem tuplas válidas — cross-filter desativado', data);
     }
   } catch (e) {
     clearTimeout(timer);
     if (forcar) toast('Não foi possível carregar dim_relacoes.json', 'erro');
-    console.warn('[RELACOES] dim_relacoes.json não encontrado — cross-filter desativado');
+    console.warn('[RELACOES] Falha ao carregar dim_relacoes.json — cross-filter desativado', e.name, e.message);
   }
 }
 
